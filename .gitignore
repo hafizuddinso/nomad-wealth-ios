@@ -1,0 +1,33 @@
+# Xcode generated files
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Signing files
+*.mobileprovision
+*.p12
+*.cer
+*.provisionprofile
+
+# Private configuration
+.env
+.env.*
+Secrets.swift
+Config.private.swift
+
+# macOS
+.DS_Store
+
+# Archives and exports
+*.xcarchive
+*.ipa
+*.dSYM.zip
+*.dSYM
