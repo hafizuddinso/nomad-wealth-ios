@@ -5,6 +5,7 @@ struct DashboardView: View {
     @EnvironmentObject private var store: FinanceStore
     @State private var transactionKind: TransactionKind?
     @State private var selectedChart = DashboardChart.cashFlow
+    @State private var summaryKind: TransactionKind?
 
     private var income: Double { store.currentMonthTotal(.income) }
     private var expenses: Double { store.currentMonthTotal(.expense) }
@@ -96,8 +97,8 @@ struct DashboardView: View {
 
                 AnimatedCard(delay: 0.02) {
                     HStack(spacing: 12) {
-                        MetricCard(title: "Income", value: store.money(income), color: .green)
-                        MetricCard(title: "Expenses", value: store.money(expenses), color: .red)
+                        Button { summaryKind = .income } label: { MetricCard(title: "Income", value: store.money(income), color: .green) }.buttonStyle(.plain)
+                        Button { summaryKind = .expense } label: { MetricCard(title: "Expenses", value: store.money(expenses), color: .red) }.buttonStyle(.plain)
                     }
                 }
 
@@ -107,6 +108,32 @@ struct DashboardView: View {
                         value: store.money(income - expenses),
                         color: income - expenses >= 0 ? .blue : .red
                     )
+                }
+
+                AnimatedCard(delay: 0.10) {
+                    SectionCard(title: "Major expense budgets") {
+                        if store.budgets.isEmpty {
+                            NavigationLink("Create your first budget") { BudgetsView() }
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                                ForEach(Array(store.budgets.sorted { store.spent(for: $0) > store.spent(for: $1) }.prefix(4))) { budget in
+                                    NavigationLink { BudgetsView() } label: {
+                                        let spent = store.spent(for: budget)
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text(budget.category).font(.caption.bold()).lineLimit(1)
+                                            Text(store.money(max(0, budget.limit - spent), currency: budget.currency)).font(.headline)
+                                            Text("left of \(store.money(budget.limit, currency: budget.currency))").font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                        .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                                        .background(.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+                                    }.buttonStyle(.plain)
+                                }
+                            }
+                            NavigationLink("View and modify all budgets") { BudgetsView() }
+                                .font(.subheadline.bold()).frame(maxWidth: .infinity, alignment: .center)
+                        }
+                    }
                 }
 
                 AnimatedCard(delay: 0.12) {
@@ -234,6 +261,47 @@ struct DashboardView: View {
             TransactionFormView(kind: kind)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $summaryKind) { kind in
+            TransactionSummaryView(kind: kind)
+        }
+    }
+}
+
+struct TransactionSummaryView: View {
+    @EnvironmentObject private var store: FinanceStore
+    @Environment(\.dismiss) private var dismiss
+    let kind: TransactionKind
+    @State private var period = 0
+
+    private var filtered: [FinanceTransaction] {
+        store.transactions.filter { item in
+            guard item.kind == kind else { return false }
+            return period == 1 || Calendar.current.isDate(item.date, equalTo: Date(), toGranularity: .month)
+        }
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                Picker("Period", selection: $period) {
+                    Text("This month").tag(0)
+                    Text("All time").tag(1)
+                }.pickerStyle(.segmented)
+                Section {
+                    let total = filtered.reduce(0.0) { result, item in
+                        result + store.convertedToMain(item.amount, from: store.account(for: item.accountID)?.currency ?? store.mainCurrency)
+                    }
+                    LabeledContent(kind == .income ? "Total income" : "Total expenses", value: store.money(total))
+                        .font(.headline)
+                }
+                Section(kind == .income ? "Income records" : "Expense records") {
+                    if filtered.isEmpty { Text("No records for this period.").foregroundStyle(.secondary) }
+                    ForEach(filtered) { TransactionRow(item: $0) }
+                }
+            }
+            .navigationTitle(kind.rawValue)
+            .toolbar { Button("Done") { dismiss() } }
         }
     }
 }

@@ -19,7 +19,7 @@ struct SupabaseUser: Codable {
         if case let .string(name)? = userMetadata?["name"], !name.isEmpty {
             return name
         }
-        return email?.split(separator: "@").first.map(String.init) ?? "User"
+        return email?.split(separator: "@").first.map { String($0) } ?? "User"
     }
 }
 
@@ -206,6 +206,26 @@ final class SupabaseAuthService {
     func signOut() {
         KeychainStore.delete("nomad_access_token")
         KeychainStore.delete("nomad_refresh_token")
+    }
+
+    func updatePassword(_ newPassword: String) async throws {
+        guard let accessToken = KeychainStore.value(for: "nomad_access_token") else {
+            throw SupabaseAuthError.server("Please log in again before changing your password.")
+        }
+        let endpoint = projectURL.appendingPathComponent("auth/v1/user")
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["password": newPassword])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw SupabaseAuthError.invalidResponse }
+        guard (200...299).contains(http.statusCode) else {
+            let decoded = try? JSONDecoder().decode(SupabaseErrorResponse.self, from: data)
+            throw SupabaseAuthError.server(decoded?.bestMessage ?? "Password update failed.")
+        }
     }
 
     private func performRequest(
